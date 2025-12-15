@@ -4,6 +4,41 @@ import EditTrackerModal from "./EditTrackerModal";
 
 const APPID = 730;
 
+// CS2 Rarity color mapping based on type
+const RARITY_COLORS = {
+  "Consumer Grade": "#B0C3D9", // Light gray
+  "Industrial Grade": "#5E98D9", // Light blue
+  "Mil-Spec": "#4B69FF", // Medium blue
+  Restricted: "#8847FF", // Purple
+  Classified: "#D32CE6", // Pink
+  Covert: "#EB4B4B", // Red
+  "Exceedingly Rare": "#FFD700", // Gold/Orange
+};
+
+// Extract rarity type from type string
+const getRarityColor = (typeString) => {
+  if (!typeString) return null;
+
+  const typeLower = typeString.toLowerCase();
+
+  // Check for each rarity type
+  if (typeLower.includes("consumer grade"))
+    return RARITY_COLORS["Consumer Grade"];
+  if (typeLower.includes("industrial grade"))
+    return RARITY_COLORS["Industrial Grade"];
+  if (typeLower.includes("mil-spec")) return RARITY_COLORS["Mil-Spec"];
+  if (typeLower.includes("restricted")) return RARITY_COLORS["Restricted"];
+  if (typeLower.includes("classified")) return RARITY_COLORS["Classified"];
+  if (typeLower.includes("covert")) return RARITY_COLORS["Covert"];
+  if (
+    typeLower.includes("exceedingly rare") ||
+    typeLower.includes("contraband")
+  )
+    return RARITY_COLORS["Exceedingly Rare"];
+
+  return null;
+};
+
 // Helper function to encode skin name for Steam URL
 const encodeSkinName = (skinName) => {
   return encodeURIComponent(skinName);
@@ -249,11 +284,16 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
             t.imageUrl ||
             getSteamImageUrl(t.skinName, t.iconUrl) ||
             imageUrls[t._id];
+          const rarityColor = getRarityColor(t.type || t.assetType);
 
           return (
             <div
               key={t._id}
-              className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all flex flex-col"
+              className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all flex flex-col relative"
+              style={{
+                borderLeftWidth: rarityColor ? "4px" : "1px",
+                borderLeftColor: rarityColor || "rgb(55, 65, 81)", // gray-700
+              }}
             >
               {/* Image */}
               <div className="flex justify-center mb-2 sm:mb-3">
@@ -429,10 +469,16 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
             getSteamImageUrl(t.skinName, t.iconUrl) ||
             imageUrls[t._id];
 
+          const rarityColor = getRarityColor(t.type || t.assetType);
+
           return (
             <div
               key={t._id}
-              className="bg-gray-800 p-3 sm:p-5 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all"
+              className="bg-gray-800 p-3 sm:p-5 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all relative"
+              style={{
+                borderLeftWidth: rarityColor ? "4px" : "1px",
+                borderLeftColor: rarityColor || "rgb(55, 65, 81)", // gray-700
+              }}
             >
               <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
                 {/* Image */}

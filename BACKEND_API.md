@@ -241,7 +241,58 @@ Deletes a tracker. The backend should verify that the tracker belongs to the req
 
 ## Utility APIs
 
-### 8. Get Steam Image
+### 8. Search CS2 Skins
+
+**GET** `/search-skins`
+
+Searches for CS2 skins on Steam Community Market. This endpoint proxies requests to Steam's Market API to avoid CORS issues.
+
+**Query Parameters:**
+
+- `query` (required) - Search query string (e.g., "AK-47 Redline")
+- `start` (optional) - Starting index for pagination (default: 0)
+- `count` (optional) - Number of results to return (default: 50, max: 100)
+
+**Response:**
+
+```json
+{
+  "results": [
+    {
+      "name": "AK-47 | Redline (Field-Tested)",
+      "hash_name": "AK-47 | Redline (Field-Tested)",
+      "sell_listings": 1234,
+      "sell_price": 1800,
+      "sell_price_text": "$1,800.00",
+      "app_icon": "...",
+      "app_name": "Counter-Strike 2",
+      "asset_description": {...},
+      "sale_price_text": "$1,800.00"
+    }
+  ],
+  "total_count": 50
+}
+```
+
+**Backend Implementation Notes:**
+
+The backend should proxy the request to Steam's Market Search API:
+
+```
+GET https://steamcommunity.com/market/search/render/?query={query}&start={start}&count={count}&search_descriptions=0&sort_column=popular&sort_dir=desc&appid=730&norender=1
+```
+
+The response from Steam should be parsed and returned in the format above. The `results` array should contain items with at least a `name` field.
+
+**Status Codes:**
+
+- `200 OK` - Search successful
+- `400 Bad Request` - Invalid query parameter
+- `500 Internal Server Error` - Server error or Steam API unavailable
+
+---
+
+### 9. Get Steam Image
 
 **GET** `/steam-image?url=:encodedUrl`
 
