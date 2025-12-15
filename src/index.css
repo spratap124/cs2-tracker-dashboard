@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force dark mode styles if needed */
+html.dark {
+  color-scheme: dark;
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 640px) {
+  /* Ensure touch targets are at least 44x44px */
+  button, a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent text selection on buttons for better mobile UX */
+  button {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  
+  /* Improve scrolling on mobile */
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Prevent zoom on input focus (iOS Safari) */
+  input, select, textarea {
+    font-size: 16px;
+  }
+}

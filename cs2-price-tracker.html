@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CS2 Skin Price Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    [v-cloak] {
+      display: none;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-gray-900 text-gray-100">
+  <div id="app" v-cloak>
+    <div class="min-h-screen bg-gray-900 text-gray-100 p-6">
+      <div class="max-w-4xl mx-auto">
+        <header class="flex items-center justify-between mb-6">
+          <h1 class="text-2xl font-bold">CS2 Skin Price Tracker</h1>
+          <div class="space-x-2">
+            <button @click="openModal = true"
+              class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow">
+              + Add Tracker
+            </button>
+          </div>
+        </header>
+
+        <main>
+          <div class="mt-4">
+            <!-- View Toggle -->
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2 bg-gray-800 rounded-lg p-1 border border-gray-700">
+                <button @click="viewMode = 'tile'" :class="[
+                    'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+                    viewMode === 'tile' 
+                      ? 'bg-gray-700 text-white' 
+                      : 'text-gray-400 hover:text-gray-300'
+                  ]">
+                  <span class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                    Tile
+                  </span>
+                </button>
+                <button @click="viewMode = 'list'" :class="[
+                    'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+                    viewMode === 'list' 
+                      ? 'bg-gray-700 text-white' 
+                      : 'text-gray-400 hover:text-gray-300'
+                  ]">
+                  <span class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    List
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Loading -->
+            <div v-if="loading" class="flex items-center justify-center py-8">
+              <p class="text-sm text-gray-400">Loading...</p>
+            </div>
+
+            <!-- Tile View -->
+            <div v-if="!loading && viewMode === 'tile'"
+              class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div v-for="t in trackers" :key="t._id"
+                class="bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all flex flex-col">
+                <!-- Image -->
+                <div class="flex justify-center mb-3">
+                  <img v-if="getImageSrc(t)" :src="getImageSrc(t)" :alt="t.skinName"
+                    class="w-32 h-32 object-contain rounded-lg bg-gray-700 p-2 border border-gray-600"
+                    @error="handleImageError($event)" />
+                  <div v-else
+                    class="w-32 h-32 rounded-lg bg-gray-700 flex items-center justify-center border border-gray-600">
+                    <span class="text-gray-500 text-xs text-center px-2">No Image</span>
+                  </div>
+                </div>
+
+                <!-- Skin Name & Interest -->
+                <div class="mb-3 flex-1">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <h3 class="text-sm font-semibold text-white line-clamp-2">{{ t.skinName }}</h3>
+                    <span v-if="t.interest" :class="[
+                        'px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0',
+                        t.interest === 'sell'
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                          : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                      ]">
+                      {{ t.interest === 'sell' ? 'Sell' : 'Buy' }}
+                    </span>
+                  </div>
+                  <p v-if="t.createdAt" class="text-xs text-gray-500">{{ formatDate(t.createdAt) }}</p>
+                </div>
+
+                <!-- Price Information -->
+                <div class="space-y-2 mb-3">
+                  <div class="bg-gray-900/50 rounded-lg p-2 border border-gray-700">
+                    <p class="text-xs text-gray-400 mb-0.5">Current</p>
+                    <p :class="[
+                      'text-base font-bold',
+                      getPriceStatus(t.lastKnownPrice, t.targetDown, t.targetUp) === 'down' ? 'text-green-400' :
+                      getPriceStatus(t.lastKnownPrice, t.targetDown, t.targetUp) === 'up' ? 'text-yellow-300' :
+                      'text-gray-300'
+                    ]">
+                      {{ formatPrice(t.lastKnownPrice) }}
+                    </p>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-gray-900/50 rounded-lg p-2 border border-gray-700">
+                      <p class="text-xs text-gray-400 mb-0.5">Down</p>
+                      <p class="text-sm font-bold text-green-400">≤ {{ formatPrice(t.targetDown) }}</p>
+                    </div>
+                    <div class="bg-gray-900/50 rounded-lg p-2 border border-gray-700">
+                      <p class="text-xs text-gray-400 mb-0.5">Up</p>
+                      <p class="text-sm font-bold text-yellow-300">≥ {{ formatPrice(t.targetUp) }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Alert Status & Delete -->
+                <div class="flex items-center justify-between mt-auto">
+                  <div v-if="t.downAlertSent || t.upAlertSent" class="flex items-center gap-2 text-xs">
+                    <span v-if="t.downAlertSent" class="flex items-center gap-1 text-green-400">
+                      <span class="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
+                    </span>
+                    <span v-if="t.upAlertSent" class="flex items-center gap-1 text-yellow-400">
+                      <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span>
+                    </span>
+                  </div>
+                  <button @click="removeTracker(t._id)"
+                    class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-xs font-medium transition-colors ml-auto">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- List View -->
+            <div v-if="!loading && viewMode === 'list'" class="grid gap-4">
+              <div v-for="t in trackers" :key="t._id"
+                class="bg-gray-800 p-5 rounded-xl shadow-lg border border-gray-700 hover:border-gray-600 transition-all">
+                <div class="flex items-start gap-4">
+                  <!-- Image -->
+                  <div class="flex-shrink-0">
+                    <img v-if="getImageSrc(t)" :src="getImageSrc(t)" :alt="t.skinName"
+                      class="w-24 h-24 object-contain rounded-lg bg-gray-700 p-2 border border-gray-600"
+                      @error="handleImageError($event)" />
+                    <div v-else
+                      class="w-24 h-24 rounded-lg bg-gray-700 flex items-center justify-center border border-gray-600">
+                      <span class="text-gray-500 text-xs text-center px-2">No Image</span>
+                    </div>
+                  </div>
+
+                  <!-- Main Content -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-4 mb-3">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                          <h3 class="text-lg font-semibold text-white truncate">{{ t.skinName }}</h3>
+                          <span v-if="t.interest" :class="[
+                              'px-2 py-0.5 rounded text-xs font-medium flex-shrink-0',
+                              t.interest === 'sell'
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                            ]">
+                            {{ t.interest === 'sell' ? 'Sell' : 'Buy' }}
+                          </span>
+                        </div>
+                        <p v-if="t.createdAt" class="text-xs text-gray-500">Added {{ formatDate(t.createdAt) }}</p>
+                      </div>
+                      <button @click="removeTracker(t._id)"
+                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0">
+                        Delete
+                      </button>
+                    </div>
+
+                    <!-- Price Information -->
+                    <div class="grid grid-cols-3 gap-4 mb-3">
+                      <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                        <p class="text-xs text-gray-400 mb-1">Current Price</p>
+                        <p :class="[
+                          'text-lg font-bold',
+                          getPriceStatus(t.lastKnownPrice, t.targetDown, t.targetUp) === 'down' ? 'text-green-400' :
+                          getPriceStatus(t.lastKnownPrice, t.targetDown, t.targetUp) === 'up' ? 'text-yellow-300' :
+                          'text-gray-300'
+                        ]">
+                          {{ formatPrice(t.lastKnownPrice) }}
+                        </p>
+                      </div>
+                      <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                        <p class="text-xs text-gray-400 mb-1">Target Down</p>
+                        <p class="text-lg font-bold text-green-400">≤ {{ formatPrice(t.targetDown) }}</p>
+                      </div>
+                      <div class="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                        <p class="text-xs text-gray-400 mb-1">Target Up</p>
+                        <p class="text-lg font-bold text-yellow-300">≥ {{ formatPrice(t.targetUp) }}</p>
+                      </div>
+                    </div>
+
+                    <!-- Alert Status -->
+                    <div v-if="t.downAlertSent || t.upAlertSent" class="flex items-center gap-3 text-xs">
+                      <span class="text-gray-500">Alerts:</span>
+                      <span v-if="t.downAlertSent" class="flex items-center gap-1 text-green-400">
+                        <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                        Down alert sent
+                        <span v-if="t.lastDownAlertPrice != null" class="text-gray-500">
+                          @ {{ formatPrice(t.lastDownAlertPrice) }}
+                        </span>
+                      </span>
+                      <span v-if="t.upAlertSent" class="flex items-center gap-1 text-yellow-400">
+                        <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                        Up alert sent
+                        <span v-if="t.lastUpAlertPrice != null" class="text-gray-500">
+                          @ {{ formatPrice(t.lastUpAlertPrice) }}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty State -->
+            <div v-if="trackers.length === 0 && !loading" class="text-center py-12">
+              <p class="text-gray-400 text-lg">No trackers yet — add one with the button above.</p>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- Add Tracker Modal -->
+      <div v-if="openModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+        @click.self="openModal = false">
+        <div class="bg-gray-900 text-gray-100 w-96 p-6 rounded-xl shadow-lg">
+          <h2 class="text-lg font-semibold mb-3">Add New Tracker</h2>
+
+          <label class="block text-sm text-gray-300">Skin Name</label>
+          <input v-model="form.skinName"
+            class="w-full mt-1 mb-3 p-2 rounded bg-gray-800 border border-gray-700 text-white"
+            placeholder="AK-47 | Redline (Field-Tested)" />
+
+          <label class="block text-sm text-gray-300">Interest</label>
+          <select v-model="form.interest"
+            class="w-full mt-1 mb-3 p-2 rounded bg-gray-800 border border-gray-700 text-white">
+            <option value="buy">Buy</option>
+            <option value="sell">Sell</option>
+          </select>
+
+          <label class="block text-sm text-gray-300">Target Down (≤)</label>
+          <input v-model.number="form.targetDown" type="number"
+            class="w-full mt-1 mb-3 p-2 rounded bg-gray-800 border border-gray-700 text-white"
+            placeholder="e.g. 1800" />
+
+          <label class="block text-sm text-gray-300">Target Up (≥)</label>
+          <input v-model.number="form.targetUp" type="number"
+            class="w-full mt-1 mb-4 p-2 rounded bg-gray-800 border border-gray-700 text-white"
+            placeholder="e.g. 2500" />
+
+          <div class="flex justify-end gap-2">
+            <button @click="openModal = false" class="px-3 py-1 rounded border border-gray-700 hover:bg-gray-800">
+              Cancel
+            </button>
+            <button @click="saveTracker" :disabled="saving"
+              class="bg-green-600 hover:bg-green-700 px-4 py-1 rounded disabled:opacity-50">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script>
+    const {
+      createApp
+    } = Vue;
+
+    const APPID = 730;
+    const API_BASE_URL = 'http://localhost:3001';
+
+    createApp({
+      data() {
+        return {
+          trackers: [],
+          loading: true,
+          imageUrls: {},
+          viewMode: 'list',
+          openModal: false,
+          saving: false,
+          form: {
+            skinName: '',
+            interest: 'sell',
+            targetDown: '',
+            targetUp: ''
+          }
+        };
+      },
+      mounted() {
+        this.loadTrackers();
+      },
+      methods: {
+        async loadTrackers() {
+          try {
+            this.loading = true;
+            const res = await axios.get(`${API_BASE_URL}/track`);
+            this.trackers = res.data;
+
+            // Fetch images for trackers that don't have imageUrl
+            const imagePromises = res.data
+              .filter((t) => !t.imageUrl && !t.iconUrl)
+              .map(async (t) => {
+                try {
+                  const listingUrl = this.getSteamListingUrl(t.skinName);
+                  const imageRes = await axios.get(
+                    `${API_BASE_URL}/steam-image?url=${encodeURIComponent(listingUrl)}`
+                  );
+                  if (imageRes.data?.imageUrl) {
+                    return {
+                      id: t._id,
+                      imageUrl: imageRes.data.imageUrl
+                    };
+                  }
+                } catch (e) {
+                  console.debug(`Could not fetch image for ${t.skinName}`);
+                }
+                return null;
+              });
+
+            const imageResults = await Promise.all(imagePromises);
+            const imageMap = {};
+            imageResults.forEach((result) => {
+              if (result) {
+                imageMap[result.id] = result.imageUrl;
+              }
+            });
+            this.imageUrls = imageMap;
+          } catch (e) {
+            console.error(e);
+          } finally {
+            this.loading = false;
+          }
+        },
+        async removeTracker(id) {
+          try {
+            await axios.delete(`${API_BASE_URL}/track/${id}`);
+            this.loadTrackers();
+          } catch (e) {
+            console.error(e);
+            alert('Failed to delete tracker');
+          }
+        },
+        async saveTracker() {
+          if (!this.form.skinName) {
+            alert('Skin name required');
+            return;
+          }
+          this.saving = true;
+          try {
+            await axios.post(`${API_BASE_URL}/track`, {
+              skinName: this.form.skinName,
+              interest: this.form.interest,
+              targetDown: this.form.targetDown ? Number(this.form.targetDown) : null,
+              targetUp: this.form.targetUp ? Number(this.form.targetUp) : null,
+            });
+            this.openModal = false;
+            this.form = {
+              skinName: '',
+              interest: 'sell',
+              targetDown: '',
+              targetUp: ''
+            };
+            this.loadTrackers();
+          } catch (e) {
+            console.error(e);
+            alert('Failed to add tracker');
+          } finally {
+            this.saving = false;
+          }
+        },
+        getSteamListingUrl(skinName) {
+          return `https://steamcommunity.com/market/listings/${APPID}/${encodeURIComponent(skinName)}`;
+        },
+        getSteamImageUrl(skinName, iconUrl) {
+          if (iconUrl) {
+            return `https://steamcommunity-a.akamaihd.net/economy/image/${iconUrl}`;
+          }
+          return null;
+        },
+        getImageSrc(tracker) {
+          return tracker.imageUrl ||
+            this.getSteamImageUrl(tracker.skinName, tracker.iconUrl) ||
+            this.imageUrls[tracker._id] ||
+            null;
+        },
+        handleImageError(e) {
+          e.target.style.display = 'none';
+          const placeholder = e.target.nextElementSibling;
+          if (placeholder) placeholder.style.display = 'flex';
+        },
+        formatPrice(price) {
+          if (price == null) return '—';
+          return typeof price === 'number' ? price.toLocaleString() : price;
+        },
+        formatDate(dateString) {
+          if (!dateString) return '';
+          const date = new Date(dateString);
+          return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+        },
+        getPriceStatus(lastPrice, targetDown, targetUp) {
+          if (lastPrice == null) return 'neutral';
+          if (targetDown != null && lastPrice <= targetDown) return 'down';
+          if (targetUp != null && lastPrice >= targetUp) return 'up';
+          return 'neutral';
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+
+</html>
