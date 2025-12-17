@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { API } from "../api";
+import { convertUSDToINR } from "../utils/exchangeRate";
 
 const EXTERIORS = [
   "Field-Tested",
@@ -138,10 +139,11 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
             );
           });
 
-        // Create maps of base names to their image URLs, rarity colors, and sell price texts
+        // Create maps of base names to their image URLs and rarity colors
+        // Create map of full names to their sell price texts (each exterior has different price)
         const baseImageMap = new Map();
         const baseRarityMap = new Map();
-        const basePriceTextMap = new Map();
+        const fullNamePriceMap = new Map(); // Map by full name to get correct price per exterior
         processedResults.forEach((item) => {
           if (item.imageUrl && !baseImageMap.has(item.baseName)) {
             baseImageMap.set(item.baseName, item.imageUrl);
@@ -149,8 +151,9 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
           if (item.rarityColor && !baseRarityMap.has(item.baseName)) {
             baseRarityMap.set(item.baseName, item.rarityColor);
           }
-          if (item.sellPriceText && !basePriceTextMap.has(item.baseName)) {
-            basePriceTextMap.set(item.baseName, item.sellPriceText);
+          // Map price by full name (including exterior) so each variant gets correct price
+          if (item.sellPriceText && item.fullName) {
+            fullNamePriceMap.set(item.fullName, item.sellPriceText);
           }
         });
 
@@ -164,13 +167,15 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
           // Add all exterior variants for each base name found
           EXTERIORS.forEach((exterior) => {
             const fullName = `${base} (${exterior})`;
+            // Get price from the map using fullName - this ensures each exterior gets its correct price
+            const sellPriceText = fullNamePriceMap.get(fullName) || null;
             variants.push({
               fullName,
               baseName: base,
               exterior,
               imageUrl: baseImageMap.get(base) || null,
               rarityColor: baseRarityMap.get(base) || null,
-              sellPriceText: basePriceTextMap.get(base) || null,
+              sellPriceText, // Use the price from the map based on fullName
             });
           });
         });
@@ -254,7 +259,7 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
     return isNaN(price) ? null : price;
   };
 
-  // Fetch USD to INR exchange rate and convert price
+  // Convert USD price to INR using cached exchange rate
   const convertPriceToINR = async (usdPriceText) => {
     // Parse the formatted price string (e.g., "$438.23")
     const usdPrice = parseUSDPrice(usdPriceText);
@@ -267,31 +272,12 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
 
     setLoadingPrice(true);
     try {
-      // Fetch live USD to INR exchange rate using a free API
-      // Using exchangerate-api.com (free tier allows 1500 requests/month)
-      const exchangeResponse = await fetch(
-        "https://api.exchangerate-api.com/v4/latest/USD"
-      );
-
-      if (!exchangeResponse.ok) {
-        throw new Error("Failed to fetch exchange rate");
-      }
-
-      const exchangeData = await exchangeResponse.json();
-      const inrRate = exchangeData.rates?.INR;
-
-      if (!inrRate) {
-        throw new Error("INR rate not found");
-      }
-
-      // Convert USD to INR
-      const inrPrice = usdPrice * inrRate;
-      setCurrentPrice(Math.round(inrPrice)); // Round to nearest rupee
+      // Use utility function that caches exchange rate for the day
+      const inrPrice = await convertUSDToINR(usdPrice);
+      setCurrentPrice(inrPrice);
     } catch (e) {
       console.error("Error converting price to INR:", e);
-      // Fallback: use approximate rate if API fails (can be updated)
-      const fallbackInrPrice = usdPrice * 83; // Approximate fallback rate
-      setCurrentPrice(Math.round(fallbackInrPrice));
+      setCurrentPrice(null);
     } finally {
       setLoadingPrice(false);
     }
@@ -322,6 +308,10 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
     setSearchQuery(value);
     setShowDropdown(value.length >= 2);
     if (error) setError("");
+    // Clear price when input is cleared
+    if (!value.trim()) {
+      setCurrentPrice(null);
+    }
   };
 
   const save = async () => {
@@ -498,6 +488,48 @@ export default function AddTrackerModal({ onClose, userId, onSuccess }) {
               </div>
             )}
         </div>
+
+        {/* Current Price Display */}
+        {skinName && (currentPrice !== null || loadingPrice) && (
+          <div className="mb-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-xs sm:text-sm text-gray-400">
+                Current Price:
+              </span>
+              {loadingPrice ? (
+                <div className="flex items-center gap-2">
+                  <svg
+                    className="animate-spin h-4 w-4 text-gray-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  <span className="text-xs sm:text-sm text-gray-400">
+                    Loading...
+                  </span>
+                </div>
+              ) : currentPrice !== null ? (
+                <span className="text-sm sm:text-base font-semibold text-green-400">
+                  {formatPriceINR(currentPrice)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         <label className="block text-xs sm:text-sm text-gray-300">
           Interest
