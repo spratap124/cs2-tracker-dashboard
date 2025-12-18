@@ -1,4 +1,12 @@
-import { useEffect, useState, useImperativeHandle, forwardRef } from "react";
+import {
+  useEffect,
+  useState,
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+  useCallback,
+} from "react";
+import axios from "axios";
 import { API } from "../api";
 import EditTrackerModal from "./EditTrackerModal";
 
@@ -65,6 +73,234 @@ const getSteamImageUrl = (skinName, iconUrl) => {
   return null;
 };
 
+// Price Sparkline Component - displays a small price history chart
+const PriceSparkline = ({
+  priceHistory,
+  width = 80,
+  height = 30,
+  interest,
+}) => {
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+
+  if (
+    !priceHistory ||
+    !Array.isArray(priceHistory) ||
+    priceHistory.length === 0
+  ) {
+    return null;
+  }
+
+  // Reverse to show oldest to newest (left to right)
+  const history = [...priceHistory].reverse();
+
+  // Extract prices and dates, handling different possible structures
+  const priceData = history
+    .map((entry, originalIndex) => {
+      let price = null;
+      let date = null;
+
+      // Handle both {price: number} and direct number values
+      if (typeof entry === "number") {
+        price = entry;
+      } else if (entry && typeof entry === "object") {
+        if ("price" in entry) {
+          price = entry.price;
+        }
+        // Try to extract date from various possible field names
+        if ("date" in entry) {
+          date = entry.date;
+        } else if ("timestamp" in entry) {
+          date = entry.timestamp;
+        } else if ("createdAt" in entry) {
+          date = entry.createdAt;
+        } else if ("updatedAt" in entry) {
+          date = entry.updatedAt;
+        }
+      }
+
+      return { price, date, originalIndex };
+    })
+    .filter(
+      (d) => d.price != null && typeof d.price === "number" && !isNaN(d.price)
+    );
+
+  if (priceData.length === 0) {
+    return null;
+  }
+
+  const prices = priceData.map((d) => d.price);
+
+  // Calculate min and max for scaling
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+
+  // If all prices are the same, add a small range for visibility
+  let priceRange = maxPrice - minPrice;
+  if (priceRange === 0) {
+    priceRange = minPrice * 0.1 || 1; // Use 10% of price, or 1 if price is 0
+  }
+
+  // Padding for the chart
+  const padding = 4;
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+
+  // Format date helper function
+  const formatDate = (dateValue) => {
+    if (!dateValue) return null;
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return null;
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  // Format price helper function
+  const formatPrice = (price) => {
+    if (price == null) return "—";
+    return typeof price === "number" ? price.toLocaleString() : price;
+  };
+
+  // Generate points for the line
+  const points = priceData.map((data, index) => {
+    // Handle single point case - center it
+    const step = priceData.length > 1 ? index / (priceData.length - 1) : 0.5;
+    const x = padding + step * chartWidth;
+    // Normalize price to 0-1 range, then scale to chart height
+    const normalizedPrice = (data.price - minPrice) / priceRange;
+    const y = padding + chartHeight - normalizedPrice * chartHeight;
+    return {
+      x,
+      y,
+      price: data.price,
+      date: data.date,
+      formattedDate: formatDate(data.date),
+    };
+  });
+
+  // Create path string for the line
+  const pathData = points
+    .map((point, index) => {
+      const cmd = index === 0 ? "M" : "L";
+      return `${cmd} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  // Determine color based on trend (first price vs last price) and interest type
+  const firstPrice = prices[0];
+  const lastPrice = prices[prices.length - 1];
+  const isIncreasing = lastPrice > firstPrice;
+  const isDecreasing = lastPrice < firstPrice;
+
+  let lineColor = "#9CA3AF"; // gray-400 (default for flat/neutral)
+
+  if (interest === "buy") {
+    // For buy interest: falling price is good (green), rising price is bad (red)
+    if (isDecreasing) {
+      lineColor = "#34D399"; // green-400
+    } else if (isIncreasing) {
+      lineColor = "#F87171"; // red-400
+    }
+  } else if (interest === "sell") {
+    // For sell interest: rising price is good (green), falling price is bad (red)
+    if (isIncreasing) {
+      lineColor = "#34D399"; // green-400
+    } else if (isDecreasing) {
+      lineColor = "#F87171"; // red-400
+    }
+  } else {
+    // No interest specified: use default trend-based coloring
+    if (isIncreasing) {
+      lineColor = "#34D399"; // green-400
+    } else if (isDecreasing) {
+      lineColor = "#F87171"; // red-400
+    }
+  }
+
+  const handleMouseEnter = (point) => {
+    setHoveredPoint(point);
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredPoint(null);
+  };
+
+  return (
+    <div className="relative" style={{ width, height }}>
+      <svg
+        width={width}
+        height={height}
+        className="block"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {/* Optional: Show area under the line for better visibility */}
+        {points.length > 1 && (
+          <path
+            d={`${pathData} L ${points[points.length - 1].x.toFixed(2)} ${
+              padding + chartHeight
+            } L ${points[0].x.toFixed(2)} ${padding + chartHeight} Z`}
+            fill={lineColor}
+            fillOpacity="0.15"
+          />
+        )}
+        {/* Main line - only show if more than one point */}
+        {points.length > 1 && (
+          <path
+            d={pathData}
+            fill="none"
+            stroke={lineColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {/* Show point(s) - always show points for visibility */}
+        {points.map((point, index) => (
+          <circle
+            key={index}
+            cx={point.x}
+            cy={point.y}
+            r={points.length === 1 ? "2.5" : "2"}
+            fill={lineColor}
+            stroke="rgba(0, 0, 0, 0.2)"
+            strokeWidth="0.5"
+            onMouseEnter={() => handleMouseEnter(point)}
+            onMouseLeave={handleMouseLeave}
+            className="cursor-pointer"
+            style={{ transition: "r 0.2s" }}
+          />
+        ))}
+      </svg>
+      {/* Tooltip */}
+      {hoveredPoint && (
+        <div
+          className="absolute z-50 bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg border border-gray-700 pointer-events-none whitespace-nowrap"
+          style={{
+            left: `${(hoveredPoint.x / width) * 100}%`,
+            top: `${(hoveredPoint.y / height) * 100}%`,
+            transform: "translate(-50%, -100%)",
+            marginTop: "-8px",
+          }}
+        >
+          <div className="font-semibold">{formatPrice(hoveredPoint.price)}</div>
+          {hoveredPoint.formattedDate && (
+            <div className="text-gray-400 text-[10px]">
+              {hoveredPoint.formattedDate}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
   const [trackers, setTrackers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,52 +309,109 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
   const [sortBy, setSortBy] = useState("date-newest"); // Sort option
   const [editingTracker, setEditingTracker] = useState(null);
   const [trackerToDelete, setTrackerToDelete] = useState(null);
+  const abortControllerRef = useRef(null);
+  const requestIdRef = useRef(0);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!userId) {
       setLoading(false);
       return;
     }
+
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    // Generate a unique request ID for this request
+    const currentRequestId = ++requestIdRef.current;
+
     try {
       setLoading(true);
-      const res = await API.get(`/track?userId=${userId}`);
-      setTrackers(res.data);
-
-      // Fetch images for trackers that don't have imageUrl
-      const imagePromises = res.data
-        .filter((t) => !t.imageUrl && !t.iconUrl)
-        .map(async (t) => {
-          try {
-            // Try to fetch image from backend endpoint if available
-            // This endpoint should fetch the image from Steam listing URL
-            const listingUrl = getSteamListingUrl(t.skinName);
-            const imageRes = await API.get(
-              `/steam-image?url=${encodeURIComponent(listingUrl)}`
-            );
-            if (imageRes.data?.imageUrl) {
-              return { id: t._id, imageUrl: imageRes.data.imageUrl };
-            }
-          } catch (e) {
-            // Backend endpoint might not exist, that's okay
-            console.debug(`Could not fetch image for ${t.skinName}`);
-          }
-          return null;
-        });
-
-      const imageResults = await Promise.all(imagePromises);
-      const imageMap = {};
-      imageResults.forEach((result) => {
-        if (result) {
-          imageMap[result.id] = result.imageUrl;
-        }
+      const res = await API.get(`/track?userId=${userId}`, {
+        signal: abortController.signal,
       });
-      setImageUrls(imageMap);
+
+      // Only update state if this is still the latest request and wasn't aborted
+      if (
+        !abortController.signal.aborted &&
+        currentRequestId === requestIdRef.current &&
+        res.data
+      ) {
+        setTrackers(res.data);
+
+        // Fetch images for trackers that don't have imageUrl
+        const imagePromises = res.data
+          .filter((t) => !t.imageUrl && !t.iconUrl)
+          .map(async (t) => {
+            try {
+              // Try to fetch image from backend endpoint if available
+              // This endpoint should fetch the image from Steam listing URL
+              const listingUrl = getSteamListingUrl(t.skinName);
+              const imageRes = await API.get(
+                `/steam-image?url=${encodeURIComponent(listingUrl)}`,
+                { signal: abortController.signal }
+              );
+              if (imageRes.data?.imageUrl && !abortController.signal.aborted) {
+                return { id: t._id, imageUrl: imageRes.data.imageUrl };
+              }
+            } catch (e) {
+              // Ignore cancellation errors and missing endpoints
+              const isCanceled =
+                e.name === "CanceledError" ||
+                e.code === "ERR_CANCELED" ||
+                (typeof axios.isCancel === "function" && axios.isCancel(e));
+              if (!isCanceled) {
+                console.debug(`Could not fetch image for ${t.skinName}`);
+              }
+            }
+            return null;
+          });
+
+        if (
+          !abortController.signal.aborted &&
+          currentRequestId === requestIdRef.current
+        ) {
+          const imageResults = await Promise.all(imagePromises);
+          if (
+            !abortController.signal.aborted &&
+            currentRequestId === requestIdRef.current
+          ) {
+            const imageMap = {};
+            imageResults.forEach((result) => {
+              if (result) {
+                imageMap[result.id] = result.imageUrl;
+              }
+            });
+            setImageUrls(imageMap);
+          }
+        }
+      }
     } catch (e) {
-      console.error(e);
+      // Ignore cancellation errors (expected when request is cancelled by axios)
+      const isCanceled =
+        e.name === "CanceledError" ||
+        e.code === "ERR_CANCELED" ||
+        (typeof axios.isCancel === "function" && axios.isCancel(e));
+      if (!isCanceled) {
+        console.error(e);
+      }
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the latest request
+      if (currentRequestId === requestIdRef.current) {
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+      }
     }
-  };
+  }, [userId]);
 
   const handleDeleteClick = (tracker) => {
     setTrackerToDelete(tracker);
@@ -144,7 +437,16 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
 
   useEffect(() => {
     load();
-  }, [userId]);
+    // Cleanup: cancel any in-flight request when component unmounts or userId changes
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      // Increment request ID to invalidate any pending requests
+      requestIdRef.current++;
+    };
+  }, [load]);
 
   useImperativeHandle(ref, () => ({
     refresh: load,
@@ -389,6 +691,21 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
                     </p>
                   </div>
                 </div>
+                {t.priceHistory && t.priceHistory.length > 0 && (
+                  <div className="bg-gray-900/50 rounded-lg p-2 border border-gray-700">
+                    <p className="text-[10px] sm:text-xs text-gray-400 mb-1">
+                      Price Trend
+                    </p>
+                    <div className="flex justify-center">
+                      <PriceSparkline
+                        priceHistory={t.priceHistory}
+                        width={80}
+                        height={24}
+                        interest={t.interest}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Alert Status & Actions */}
@@ -617,6 +934,21 @@ const TrackerList = forwardRef(function TrackerList({ userId }, ref) {
                       </p>
                     </div>
                   </div>
+                  {t.priceHistory && t.priceHistory.length > 0 && (
+                    <div className="bg-gray-900/50 rounded-lg p-2 sm:p-3 border border-gray-700 mb-2 sm:mb-3">
+                      <p className="text-[10px] sm:text-xs text-gray-400 mb-1 sm:mb-2">
+                        Price Trend
+                      </p>
+                      <div className="flex justify-center sm:justify-start">
+                        <PriceSparkline
+                          priceHistory={t.priceHistory}
+                          width={120}
+                          height={32}
+                          interest={t.interest}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Alert Status */}
                   {(t.downAlertSent || t.upAlertSent) && (
